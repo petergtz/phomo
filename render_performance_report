@@ -1,0 +1,46 @@
+RENDER
+========
+
+without checking for repeated images:
+---------------------------------------
+
+1 thread:
+
+real	0m52.730s
+user	0m49.910s
+sys	0m0.530s
+
+
+2 threads:
+
+real	0m30.684s
+user	0m48.420s
+sys	0m2.270s
+
+
+3 threads:
+
+real	0m29.636s
+user	0m48.760s
+sys	0m1.900s
+
+
+4 threads:
+
+real	0m29.576s
+user	0m48.620s
+sys	0m1.940s
+
+with checking for repeated images:
+---------------------------------------
+
+4 threads:
+
+real	0m30.738s
+user	0m49.870s
+sys	0m2.350s
+
+real	0m29.164s
+user	0m50.140s
+sys	0m1.450s
+

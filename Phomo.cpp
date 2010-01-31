@@ -81,21 +81,21 @@ program_options::options_description create_options_description()
 {
     program_options::options_description options_description;
 
-    options_description.add_options()("action", program_options::value<string>(), "")
-("help,h", "")
-("version,v", "")
-("photos-dir,d", program_options::value<string>(), "")
-("photos-file,d", program_options::value<string>(), "")
-("input-type", program_options::value<string>(), "")
-            ("database-filename,o", program_options::value<string>(), "")
-            ("picture-path", program_options::value<string>(), "")
-            ("aspect-ratio", program_options::value<string>()->default_value("1"), "")
-            ("raster-resolution", program_options::value<int>()->default_value(3), "")
-            ("output-width", program_options::value<int>()->default_value(1024), "")
-            ("x-resolution-in-stones", program_options::value<int>()->default_value(10), "")
-            ("min-distance", program_options::value<int>()->default_value(10), "")
-            ("number-of-threads", program_options::value<int>()->default_value(4), "")
-            ("output-filename", program_options::value<string>(), "");
+    options_description.add_options()("action", program_options::value<string>(), "Allowed values: build-database | render")
+("help,h", "Prints this help.")
+("version,v", "Prints version information.")
+("photos-dir", program_options::value<string>(), "Top-directory which will be recursively traversed to build mosaic stones database.")
+("photos-file", program_options::value<string>(), "File that contains a list of image file paths to be used as mosaic stones. A \"-\" uses standard input instead of a file.")
+("input-type", program_options::value<string>(), "Specifies the input type. Allowed is directory or file.")
+            ("database-filename", program_options::value<string>(), "The filename for the photos database.")
+            ("picture-path", program_options::value<string>(), "Path of the input pictures that is to be mosaicized.")
+            ("aspect-ratio", program_options::value<string>()->default_value("1"), "Aspect ratio which should be used for the mosaic stones.")
+            ("raster-resolution", program_options::value<int>()->default_value(3), "Resolution of the rasterization the algorithm should internally use.")
+            ("output-width", program_options::value<int>()->default_value(1024), "Pixel resolution of the resulting photo mosaic.")
+            ("x-resolution-in-stones", program_options::value<int>()->default_value(10), "Resolution of the resulting photo mosaic measured in mosaic stones.")
+            ("min-distance", program_options::value<int>()->default_value(10), "The minimum distance in which identical stones are allowed to appear.")
+            ("number-of-threads", program_options::value<int>()->default_value(4), "Fine tune control over number of threads to use.")
+            ("output-filename", program_options::value<string>(), "Image file path for the resulting photo mosaic.");
     return options_description;
 }
 

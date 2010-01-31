@@ -722,12 +722,13 @@ struct Position
     int x,y;
 };
 
+template<class SourceView>
 struct RenderParameters
 {
     Limits row_limits;
     Configuration config;
     Size source_stone_size;
-    gil::rgb8_view_t source_view;
+    SourceView source_view;
     MosaicsDatabase* mosaics_database;
     JPG* output_image;
     OutputMatrix* output;
@@ -735,7 +736,8 @@ struct RenderParameters
     vector<Position> *positions;
 };
 
-void find_and_set_stones(RenderParameters params)
+template<class SourceView>
+void find_and_set_stones(RenderParameters<SourceView> params)
 {
     cout << params.row_limits.min << " " << params.row_limits.max << endl;
     const list<MosaicStonePtr> &stones = params.mosaics_database->stones();
@@ -746,7 +748,7 @@ void find_and_set_stones(RenderParameters params)
         int stone_x = (*(params.positions))[i].x;
         int stone_y = (*(params.positions))[i].y;
         timer.restart();
-        gil::rgb8_view_t subimage = subimage_view(params.source_view, stone_x*params.source_stone_size.width, stone_y*params.source_stone_size.height, params.source_stone_size.width, params.source_stone_size.height);
+        SourceView subimage = subimage_view(params.source_view, stone_x*params.source_stone_size.width, stone_y*params.source_stone_size.height, params.source_stone_size.width, params.source_stone_size.height);
 
 
         int raster_resolution = params.mosaics_database->raster_resolution();
@@ -795,14 +797,11 @@ struct RandomShuffler
 };
 
 
-
-OutputMatrix render(const string& source_img_path, const string& database_path, const string& output_image_path, int output_width, int x_res_in_stones, int min_distance, int number_of_threads)
+template<class SourceView>
+OutputMatrix render(const SourceView& source_view, const string& database_path, const string& output_image_path, int output_width, int x_res_in_stones, int min_distance, int number_of_threads)
 {
     MosaicsDatabase mosaics_database(database_path);
 
-    gil::rgb8_image_t source_image;
-    gil::jpeg_read_and_convert_image(source_img_path, source_image);
-    gil::rgb8_view_t source_view = view(source_image);
 
 
     int source_stone_width = source_view.width() / x_res_in_stones;
@@ -818,6 +817,11 @@ OutputMatrix render(const string& source_img_path, const string& database_path, 
 
     int number_of_stones = y_res_in_stones * x_res_in_stones;
     vector<Position> positions(number_of_stones);
+
+    if(static_cast<size_t>(min_distance*min_distance) > mosaics_database.stones().size())
+    {
+        throw std::runtime_error("Not enough stones for current settings. Either use a bigger database or reduce min-distance.");
+    }
 
     for(int i=0;i<y_res_in_stones;++i)
     {
@@ -837,7 +841,7 @@ OutputMatrix render(const string& source_img_path, const string& database_path, 
     Progress progress(number_of_stones);
 
     ThreadList thread_list;
-    RenderParameters render_parameters;
+    RenderParameters<SourceView> render_parameters;
     render_parameters.config.min_distance = min_distance;
     render_parameters.config.x_res_in_stones = x_res_in_stones;
     render_parameters.source_stone_size.width = source_stone_width;
@@ -852,11 +856,11 @@ OutputMatrix render(const string& source_img_path, const string& database_path, 
     {
         render_parameters.row_limits.min = i*stones_per_thread;
         render_parameters.row_limits.max = render_parameters.row_limits.min+stones_per_thread-1;
-        thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones, render_parameters)));
+        thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
     }
     render_parameters.row_limits.min = (number_of_threads-1)*stones_per_thread;
     render_parameters.row_limits.max = number_of_stones-1;
-    thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones, render_parameters)));
+    thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
 
     BOOST_FOREACH(ThreadPtr thread, thread_list)
     {
@@ -941,13 +945,53 @@ int main(int argc, char** argv)
         }
         else if (input["action"].as<string> () == "render")
         {
-            OutputMatrix output_matrix = render(input["picture-path"].as<string>(),
-                input["database-filename"].as<string> (),
-                input["output-filename"].as<string> (),
-                input["output-width"].as<int>(),
-                input["x-resolution-in-stones"].as<int>(),
-                input["min-distance"].as<int>(),
-                input["number-of-threads"].as<int>());
+            string source_img_path = input["picture-path"].as<string>();
+            Orientation orientation = orientation_from_image_path(source_img_path);
+
+            gil::rgb8_image_t source_image;
+            gil::jpeg_read_and_convert_image(source_img_path, source_image);
+            gil::rgb8_view_t source_view = view(source_image);
+
+
+            switch(orientation)
+            {
+            case NOT_ROTATED:
+                render(source_view,
+                    input["database-filename"].as<string> (),
+                    input["output-filename"].as<string> (),
+                    input["output-width"].as<int>(),
+                    input["x-resolution-in-stones"].as<int>(),
+                    input["min-distance"].as<int>(),
+                    input["number-of-threads"].as<int>());
+                break;
+            case ROTATED_180:
+                render(gil::rotated180_view(source_view),
+                    input["database-filename"].as<string> (),
+                    input["output-filename"].as<string> (),
+                    input["output-width"].as<int>(),
+                    input["x-resolution-in-stones"].as<int>(),
+                    input["min-distance"].as<int>(),
+                    input["number-of-threads"].as<int>());
+                break;
+            case ROTATED_90CCW:
+                render(gil::rotated90cw_view(source_view),
+                    input["database-filename"].as<string> (),
+                    input["output-filename"].as<string> (),
+                    input["output-width"].as<int>(),
+                    input["x-resolution-in-stones"].as<int>(),
+                    input["min-distance"].as<int>(),
+                    input["number-of-threads"].as<int>());
+                break;
+            case ROTATED_90CW:
+                render(gil::rotated90ccw_view(source_view),
+                    input["database-filename"].as<string> (),
+                    input["output-filename"].as<string> (),
+                    input["output-width"].as<int>(),
+                    input["x-resolution-in-stones"].as<int>(),
+                    input["min-distance"].as<int>(),
+                    input["number-of-threads"].as<int>());
+                break;
+            }
         }
         else
         {

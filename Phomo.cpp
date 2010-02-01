@@ -101,6 +101,7 @@ program_options::options_description visible_options_description()
         ("x-resolution-in-stones", program_options::value<int>()->default_value(10), "Resolution of the resulting photo mosaic measured in mosaic stones.")
         ("min-distance", program_options::value<int>()->default_value(10), "The minimum distance in which identical stones are allowed to appear.")
         ("number-of-threads", program_options::value<int>()->default_value(4), "Fine tune control over number of threads to use.")
+        ("print-time-left", "Print time left to complete instead of progress in percentage.")
         ("output-filename", program_options::value<string>(), "Image file path for the resulting photo mosaic.");
     options_description.add(shared_options);
     options_description.add(build_database_options);
@@ -297,7 +298,7 @@ public:
         int deviation = 0;
         for(size_t i=0; i<raster_values_.size();++i)
         {
-            deviation += abs(raster_values_[i]-b[i]);
+            deviation += (raster_values_[i]-b[i])*(raster_values_[i]-b[i]);
 
             if(deviation>=best_deviation and best_deviation!=-1)
             {
@@ -710,14 +711,30 @@ class Progress
     mutable boost::mutex mutex_;
 
     boost::timer timer_;
+    bool print_time_left_;
 public:
-    Progress(int hundred_percent_equivalent) : hundred_percent_equivalent_(hundred_percent_equivalent), done_so_far_(0) {}
+    Progress(int hundred_percent_equivalent, bool print_time_left = false)
+        : hundred_percent_equivalent_(hundred_percent_equivalent),
+          done_so_far_(0),
+          print_time_left_(print_time_left)
+          {}
 
     double status() const
     {
         return (double)done_so_far_/hundred_percent_equivalent_;
     }
 
+    void inc_and_print()
+    {
+        if(print_time_left_)
+        {
+            inc_and_print_minutes_left();
+        }
+        else
+        {
+            inc_and_print_status();
+        }
+    }
 
     void inc_and_print_status()
     {
@@ -796,7 +813,7 @@ void find_and_set_stones(RenderParameters<SourceView> params)
 
         params.output_image->set_mosaic_stone(stone_x, stone_y, mosaic_stone->image_file_path());
 //            progress->inc_and_print_status();
-        params.progress->inc_and_print_minutes_left();
+        params.progress->inc_and_print();
     }
 
 }
@@ -820,7 +837,7 @@ struct RandomShuffler
 
 
 template<class SourceView>
-OutputMatrix render(const SourceView& source_view, const string& database_path, const string& output_image_path, int output_width, int x_res_in_stones, int min_distance, int number_of_threads)
+OutputMatrix render(const SourceView& source_view, const string& database_path, const string& output_image_path, int output_width, int x_res_in_stones, int min_distance, int number_of_threads, bool print_time_left)
 {
     MosaicsDatabase mosaics_database(database_path);
 
@@ -860,7 +877,7 @@ OutputMatrix render(const SourceView& source_view, const string& database_path, 
     }
     int stones_per_thread = number_of_stones / number_of_threads;
 
-    Progress progress(number_of_stones);
+    Progress progress(number_of_stones, print_time_left);
 
     ThreadList thread_list;
     RenderParameters<SourceView> render_parameters;
@@ -990,7 +1007,8 @@ int main(int argc, char** argv)
                     input["output-width"].as<int>(),
                     input["x-resolution-in-stones"].as<int>(),
                     input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>());
+                    input["number-of-threads"].as<int>(),
+                    input.count("print-time-left"));
                 break;
             case ROTATED_180:
                 render(gil::rotated180_view(source_view),
@@ -999,7 +1017,8 @@ int main(int argc, char** argv)
                     input["output-width"].as<int>(),
                     input["x-resolution-in-stones"].as<int>(),
                     input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>());
+                    input["number-of-threads"].as<int>(),
+                    input.count("print-time-left"));
                 break;
             case ROTATED_90CCW:
                 render(gil::rotated90cw_view(source_view),
@@ -1008,7 +1027,8 @@ int main(int argc, char** argv)
                     input["output-width"].as<int>(),
                     input["x-resolution-in-stones"].as<int>(),
                     input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>());
+                    input["number-of-threads"].as<int>(),
+                    input.count("print-time-left"));
                 break;
             case ROTATED_90CW:
                 render(gil::rotated90ccw_view(source_view),
@@ -1017,7 +1037,8 @@ int main(int argc, char** argv)
                     input["output-width"].as<int>(),
                     input["x-resolution-in-stones"].as<int>(),
                     input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>());
+                    input["number-of-threads"].as<int>(),
+                    input.count("print-time-left"));
                 break;
             }
         }

@@ -1,0 +1,10 @@
+libboost-program-options
+libboost-filesystem
+libboost-thread
+libboost-system
+libexiv2
+libpthread
+libexpat
+libpng
+libz
+

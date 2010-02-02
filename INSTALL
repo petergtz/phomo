@@ -1,0 +1,14 @@
+Make sure all dependencies from the file DEPENDENCIES are met.
+
+Then, from a console, execute:
+
+    make
+    
+And optionally:
+
+    make install
+    
+To uninstall:
+
+    make uninstall
+

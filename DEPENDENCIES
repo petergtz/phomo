@@ -2,9 +2,12 @@ libboost-program-options
 libboost-filesystem
 libboost-thread
 libboost-system
+libboost
 libexiv2
 libpthread
 libexpat
 libpng
 libz
+
+boost GIL numeric-extension: http://opensource.adobe.com/wiki/display/gil/Downloads
 

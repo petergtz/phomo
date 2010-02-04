@@ -1,5 +1,9 @@
 Make sure all dependencies from the file DEPENDENCIES are met.
 
+Also make sure, your gcc version works fine with your boost version.
+E.g. boost 1.40 should be used with gcc 4.3, otherwise there might 
+be some build problems.
+
 Then, from a console, execute:
 
     make
@@ -11,4 +15,6 @@ And optionally:
 To uninstall:
 
     make uninstall
+    
+In case of problems: p3rg2z@users.sourceforge.net
 

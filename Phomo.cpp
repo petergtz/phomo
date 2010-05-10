@@ -197,16 +197,16 @@ Orientation orientation_from_image_path(const string& path)
 
 }
 
-void swap(gil::point2<long int>& dimensions)
+void swap(gil::point2<std::ptrdiff_t>& dimensions)
 {
     long int help = dimensions.x;
     dimensions.x = dimensions.y;
     dimensions.y = help;
 }
 
-gil::point2<long int> aspect_ratio_cropped_dimensions(const string& current_path, double aspect_ratio, Orientation orientation)
+gil::point2<std::ptrdiff_t> aspect_ratio_cropped_dimensions(const string& current_path, double aspect_ratio, Orientation orientation)
 {
-    gil::point2<long int> dimensions = gil::jpeg_read_dimensions(current_path);
+    gil::point2<std::ptrdiff_t> dimensions = gil::jpeg_read_dimensions(current_path);
     if (orientation == ROTATED_90CCW or orientation == ROTATED_90CW)
     {
         swap(dimensions);
@@ -258,7 +258,7 @@ public:
     {
         timer.restart();
         Orientation orientation = orientation_from_image_path(image_file_path);
-        gil::point2<long int> dimensions = aspect_ratio_cropped_dimensions(image_file_path, aspect_ratio, orientation);
+        gil::point2<std::ptrdiff_t> dimensions = aspect_ratio_cropped_dimensions(image_file_path, aspect_ratio, orientation);
 
         gil::rgb8_image_t source_image;
         gil::jpeg_read_and_convert_image(image_file_path, source_image);

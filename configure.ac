@@ -2,12 +2,17 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.64])
-AC_INIT([phomo], [0.1], [p3rg3z@users.sourceforge.com])
+AC_INIT([phomo], [0.3], [p3rg3z@users.sourceforge.com])
 AM_INIT_AUTOMAKE([1.11 foreign])
 
 
 # Checks for programs.
 AC_PROG_CXX
+#gcc_version=`gcc -dumpversion`
+#AC_MSG_ERROR(`gcc -dumpversion`)
+#if test `gcc -dumpversion` = "4.4.3" ; then
+#AC_MSG_ERROR(wrong version AX_GCC_VERSION)
+#fi
 
 # Checks for libraries.
 

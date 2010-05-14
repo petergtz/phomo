@@ -199,7 +199,7 @@ Orientation orientation_from_image_path(const string& path)
 
 void swap(gil::point2<std::ptrdiff_t>& dimensions)
 {
-    long int help = dimensions.x;
+    std::ptrdiff_t help = dimensions.x;
     dimensions.x = dimensions.y;
     dimensions.y = help;
 }
@@ -564,7 +564,7 @@ public:
         {
             double aspect_ratio = (double)stone_width_/(double)stone_height_;
             Orientation orientation = orientation_from_image_path(current_path);
-            gil::point2<long int> dimensions = aspect_ratio_cropped_dimensions(current_path, aspect_ratio, orientation);
+            gil::point2<std::ptrdiff_t> dimensions = aspect_ratio_cropped_dimensions(current_path, aspect_ratio, orientation);
             gil::rgb8_image_t mosaic_stone_img_big;
             gil::jpeg_read_image(current_path, mosaic_stone_img_big);
 

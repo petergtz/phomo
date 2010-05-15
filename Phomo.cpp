@@ -63,6 +63,7 @@ using std::ifstream;
 //using filesystem::recursive_directory_iterator;
 using std::vector;
 using std::ptrdiff_t;
+using std::pair;
 using boost::algorithm::iends_with;
 using boost::lexical_cast;
 using boost::algorithm::split;
@@ -561,17 +562,17 @@ public:
         gil::jpeg_write_view(filename, view_, 85);
     }
 
-    void set_mosaic_stone(int x, int y, int stone_width, int stone_height, const string& current_path)
+    void set_mosaic_stone(const Position& pos, const Dimensions& stone_size, const string& current_path)
     {
         try
         {
-            double aspect_ratio = (double)stone_width/(double)stone_height;
+            double aspect_ratio = (double)stone_size.x/(double)stone_size.y;
             Orientation orientation = orientation_from_image_path(current_path);
             gil::point2<std::ptrdiff_t> dimensions = aspect_ratio_cropped_dimensions(current_path, aspect_ratio, orientation);
             gil::rgb8_image_t mosaic_stone_img_big;
             gil::jpeg_read_image(current_path, mosaic_stone_img_big);
 
-            gil::rgb8_image_t mosaic_stone_img_small(stone_width, stone_height);
+            gil::rgb8_image_t mosaic_stone_img_small(stone_size.x, stone_size.y);
 
             Position o;
 
@@ -597,7 +598,7 @@ public:
 
             {
                 boost::mutex::scoped_lock lock(mutex);
-                gil::copy_pixels(const_view(mosaic_stone_img_small), subimage_view(view_, x * stone_width, y * stone_height, stone_width, stone_height));
+                gil::copy_pixels(const_view(mosaic_stone_img_small), subimage_view(view_, Position(pos.x * stone_size.x, pos.y * stone_size.y), stone_size));
             }
         }
         catch(std::exception& error)
@@ -625,6 +626,16 @@ public:
     OutputMatrix(const OutputMatrix& other)
     {
         matrix_ = other.matrix_;
+    }
+
+    MosaicStonePtr& operator()(const Position& pos)
+    {
+        return operator()(pos.x, pos.y);
+    }
+
+    const MosaicStonePtr& operator() (const Position& pos) const
+    {
+        return operator()(pos.x, pos.y);
     }
 
     MosaicStonePtr& operator()(int x, int y)
@@ -670,18 +681,18 @@ int end_from_coord_and_min_distance(int coord, int min_distance, int resolution)
     return end;
 }
 
-list<MosaicStonePtr> create_distance_caused_excludes(int x, int y, const OutputMatrix& output, int min_distance)
+list<MosaicStonePtr> create_distance_caused_excludes(const Position& pos, const OutputMatrix& output, int min_distance)
 {
-    int startx = start_from_coord_and_min_dinstance(x, min_distance);
-    int starty = start_from_coord_and_min_dinstance(y, min_distance);
-    int endx = end_from_coord_and_min_distance(x, min_distance, output.xres());
-    int endy = end_from_coord_and_min_distance(y, min_distance, output.yres());
+    int startx = start_from_coord_and_min_dinstance(pos.x, min_distance);
+    int starty = start_from_coord_and_min_dinstance(pos.y, min_distance);
+    int endx = end_from_coord_and_min_distance(pos.x, min_distance, output.xres());
+    int endy = end_from_coord_and_min_distance(pos.y, min_distance, output.yres());
     list<MosaicStonePtr> excludes;
     for(int i=startx; i<=endx; ++i)
     {
         for(int j=starty; j<=endy; ++j)
         {
-            if((i!=x or j!=y) and output(i,j))
+            if((i!=pos.x or j!=pos.y) and output(i,j))
             {
                 excludes.push_back(output(i,j));
             }
@@ -785,60 +796,16 @@ struct RenderSettings
 template<class SourceView>
 struct RenderParameters
 {
-    Limits row_limits;
     int min_distance;
-    Size source_stone_size;
-    Size output_stone_size;
+    Dimensions source_stone_size;
+    Dimensions output_stone_size;
     SourceView source_view;
     MosaicsDatabase* mosaics_database;
     JPG* output_image;
     OutputMatrix* output;
     Progress* progress;
-    vector<Position> *positions;
+//    pair<vector<Position>::iterator, vector<Position>::iterator> positions;
 };
-
-template<class SourceView>
-void find_and_set_stones(RenderParameters<SourceView> params)
-{
-    cout << params.row_limits.min << " " << params.row_limits.max << endl;
-    const list<MosaicStonePtr> &stones = params.mosaics_database->stones();
-    OutputMatrix& output_matrix = *params.output;
-
-    for(int i=params.row_limits.min; i<=params.row_limits.max; ++i)
-    {
-        int stone_x = (*(params.positions))[i].x;
-        int stone_y = (*(params.positions))[i].y;
-        timer.restart();
-        SourceView subimage = subimage_view(params.source_view, stone_x*params.source_stone_size.width, stone_y*params.source_stone_size.height, params.source_stone_size.width, params.source_stone_size.height);
-
-
-        int raster_resolution = params.mosaics_database->raster_resolution();
-        vector<int> rastered_piece(raster_resolution*raster_resolution*NUMBER_OF_CHANNELS);
-        raster_values_from_view(subimage, raster_resolution, raster_resolution, rastered_piece);
-        timer.print_elapsed_with_label("Elapsed time to create rastered piece");
-
-        MosaicStonePtr mosaic_stone;
-
-        {
-            boost::mutex::scoped_lock lock(mosaic_stone_set_mutex);
-
-            timer.restart();
-            list<MosaicStonePtr> excluded_stones = create_distance_caused_excludes(stone_x, stone_y, output_matrix, params.min_distance);
-            timer.print_elapsed_with_label("Elapsed time to find excludes");
-
-            timer.restart();
-            mosaic_stone = find_closest_match(stones, rastered_piece, excluded_stones);
-            timer.print_elapsed_with_label("Elapsed time to find stone");
-
-            output_matrix(stone_x, stone_y) = mosaic_stone;
-        }
-
-        params.output_image->set_mosaic_stone(stone_x, stone_y, params.output_stone_size.width, params.output_stone_size.height, mosaic_stone->image_file_path());
-//            progress->inc_and_print_status();
-        params.progress->inc_and_print();
-    }
-
-}
 
 
 struct Shuffler
@@ -857,20 +824,67 @@ struct RandomShuffler
     }
 };
 
-inline int calc_source_stone_width(int source_view_width, int xres_in_stones)
-{
-    return source_view_width / xres_in_stones;
-}
+typedef pair<vector<Position>::iterator, vector<Position>::iterator> PositionsRange;
 
-inline int calc_source_stone_height(int source_view_width, int xres_in_stones, double aspect_ratio)
+template<class SourceView>
+class RenderTask
 {
-    return (double)calc_source_stone_width(source_view_width, xres_in_stones) / aspect_ratio;
-}
+public:
+    RenderTask(RenderParameters<SourceView>& render_params) :
+        params(render_params)//, positions_(positions)
+    {}
 
-inline int calc_y_res_in_stones(int source_view_width, int source_view_height, int xres_in_stones, double aspect_ratio)
-{
-    return source_view_height / calc_source_stone_height(source_view_width, xres_in_stones, aspect_ratio);
-}
+    void operator()(const PositionsRange& positions)
+    {
+        find_and_set_stones(positions);
+    }
+private:
+
+    void find_and_set_stones(const PositionsRange& positions_)
+    {
+    //    cout << params.row_limits.min << " " << params.row_limits.max << endl;
+        const list<MosaicStonePtr> &stones = params.mosaics_database->stones();
+        OutputMatrix& output_matrix = *params.output;
+
+        for(vector<Position>::iterator pos=positions_.first; pos!=positions_.second; ++pos)
+        {
+            timer.restart();
+            SourceView subimage = subimage_view(params.source_view,
+                    Dimensions(pos->x*params.source_stone_size.x, pos->y*params.source_stone_size.y),
+                    params.source_stone_size);
+
+
+            int raster_resolution = params.mosaics_database->raster_resolution();
+            vector<int> rastered_piece(raster_resolution*raster_resolution*NUMBER_OF_CHANNELS);
+            raster_values_from_view(subimage, raster_resolution, raster_resolution, rastered_piece);
+            timer.print_elapsed_with_label("Elapsed time to create rastered piece");
+
+            MosaicStonePtr mosaic_stone;
+
+            {
+                boost::mutex::scoped_lock lock(mosaic_stone_set_mutex);
+
+                timer.restart();
+                list<MosaicStonePtr> excluded_stones = create_distance_caused_excludes(*pos, output_matrix, params.min_distance);
+                timer.print_elapsed_with_label("Elapsed time to find excludes");
+
+                timer.restart();
+                mosaic_stone = find_closest_match(stones, rastered_piece, excluded_stones);
+                timer.print_elapsed_with_label("Elapsed time to find stone");
+
+                output_matrix(*pos) = mosaic_stone;
+            }
+
+            params.output_image->set_mosaic_stone(*pos, params.output_stone_size, mosaic_stone->image_file_path());
+    //            progress->inc_and_print_status();
+            params.progress->inc_and_print();
+        }
+
+    }
+
+    RenderParameters<SourceView> params;
+//    PositionsRange positions_;
+};
 
 class Renderer
 {
@@ -917,25 +931,22 @@ public:
         ThreadList thread_list;
         RenderParameters<SourceView> render_parameters;
         render_parameters.min_distance = render_settings.min_distance;
-        render_parameters.source_stone_size.width = source_stone_width;
-        render_parameters.source_stone_size.height = source_stone_height;
-        render_parameters.output_stone_size.width = output_stone_width;
-        render_parameters.output_stone_size.height = output_stone_height;
+        render_parameters.source_stone_size = Dimensions(source_stone_width, source_stone_height);
+        render_parameters.output_stone_size = Dimensions(output_stone_width, output_stone_height);
         render_parameters.mosaics_database = &mosaics_database_;
         render_parameters.output = &output;
         render_parameters.output_image = &output_image;
         render_parameters.progress = &progress;
-        render_parameters.positions = &positions;
         render_parameters.source_view = source_view;
+        ;RenderTask<SourceView> render_task(render_parameters);
         for(int i=0; i<number_of_threads_-1;++i)
         {
-            render_parameters.row_limits.min = i*stones_per_thread;
-            render_parameters.row_limits.max = render_parameters.row_limits.min+stones_per_thread-1;
-            thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
+            thread_list.push_back(ThreadPtr(new boost::thread(render_task,
+                    PositionsRange(positions.begin() + i*stones_per_thread, positions.begin() + i*stones_per_thread+stones_per_thread))));
         }
-        render_parameters.row_limits.min = (number_of_threads_-1)*stones_per_thread;
-        render_parameters.row_limits.max = number_of_stones-1;
-        thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
+        thread_list.push_back(ThreadPtr(new boost::thread(render_task,
+                PositionsRange(positions.begin()+(number_of_threads_-1)*stones_per_thread,
+                        positions.begin()+number_of_stones))));
 
         BOOST_FOREACH(ThreadPtr thread, thread_list)
         {

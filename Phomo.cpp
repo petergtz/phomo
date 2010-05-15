@@ -60,7 +60,6 @@ using std::list;
 using std::endl;
 using std::ofstream;
 using std::ifstream;
-//using filesystem::recursive_directory_iterator;
 using std::vector;
 using std::ptrdiff_t;
 using std::pair;
@@ -701,24 +700,6 @@ list<MosaicStonePtr> create_distance_caused_excludes(const Position& pos, const 
     return excludes;
 }
 
-struct Configuration
-{
-    int x_res_in_stones;
-    int min_distance;
-};
-
-struct Size
-{
-    int width;
-    int height;
-};
-
-struct Limits
-{
-    int min;
-    int max;
-};
-
 boost::mutex mosaic_stone_set_mutex;
 
 class Progress
@@ -804,7 +785,6 @@ struct RenderParameters
     JPG* output_image;
     OutputMatrix* output;
     Progress* progress;
-//    pair<vector<Position>::iterator, vector<Position>::iterator> positions;
 };
 
 

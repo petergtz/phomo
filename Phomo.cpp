@@ -546,9 +546,8 @@ MosaicStonePtr find_closest_match(const list<MosaicStonePtr>& stones, const vect
 class JPG
 {
 public:
-    JPG(const string& filename, int width, int height, int stone_width, int stone_height) :
-        filename_(filename), image_(width, height), stone_width_(stone_width), stone_height_(stone_height),
-        width_(width), height_(height)
+    JPG(const string& filename, int width, int height) :
+        filename_(filename), image_(width, height)
     {
        view_ = view(image_);
     }
@@ -558,17 +557,17 @@ public:
         gil::jpeg_write_view(filename_, view_, 85);
     }
 
-    void set_mosaic_stone(int x, int y, const string& current_path)
+    void set_mosaic_stone(int x, int y, int stone_width, int stone_height, const string& current_path)
     {
         try
         {
-            double aspect_ratio = (double)stone_width_/(double)stone_height_;
+            double aspect_ratio = (double)stone_width/(double)stone_height;
             Orientation orientation = orientation_from_image_path(current_path);
             gil::point2<std::ptrdiff_t> dimensions = aspect_ratio_cropped_dimensions(current_path, aspect_ratio, orientation);
             gil::rgb8_image_t mosaic_stone_img_big;
             gil::jpeg_read_image(current_path, mosaic_stone_img_big);
 
-            gil::rgb8_image_t mosaic_stone_img_small(stone_width_, stone_height_);
+            gil::rgb8_image_t mosaic_stone_img_small(stone_width, stone_height);
 
             switch(orientation)
             {
@@ -588,7 +587,7 @@ public:
 
             {
                 boost::mutex::scoped_lock lock(mutex);
-                gil::copy_pixels(const_view(mosaic_stone_img_small), subimage_view(view_, x * stone_width_, y * stone_height_, stone_width_, stone_height_));
+                gil::copy_pixels(const_view(mosaic_stone_img_small), subimage_view(view_, x * stone_width, y * stone_height, stone_width, stone_height));
             }
         }
         catch(std::exception& error)
@@ -601,8 +600,6 @@ private:
     string filename_;
     gil::rgb8_image_t image_;
     gil::rgb8_view_t view_;
-    int stone_width_, stone_height_;
-    int width_, height_;
     boost::mutex mutex;
 };
 
@@ -766,6 +763,7 @@ struct RenderParameters
     Limits row_limits;
     Configuration config;
     Size source_stone_size;
+    Size output_stone_size;
     SourceView source_view;
     MosaicsDatabase* mosaics_database;
     JPG* output_image;
@@ -810,7 +808,7 @@ void find_and_set_stones(RenderParameters<SourceView> params)
             output_matrix(stone_x, stone_y) = mosaic_stone;
         }
 
-        params.output_image->set_mosaic_stone(stone_x, stone_y, mosaic_stone->image_file_path());
+        params.output_image->set_mosaic_stone(stone_x, stone_y, params.output_stone_size.width, params.output_stone_size.height, mosaic_stone->image_file_path());
 //            progress->inc_and_print_status();
         params.progress->inc_and_print();
     }
@@ -834,78 +832,108 @@ struct RandomShuffler
     }
 };
 
-
-template<class SourceView>
-OutputMatrix render(const SourceView& source_view, const string& database_path, const string& output_image_path, int output_width, int x_res_in_stones, int min_distance, int number_of_threads, bool print_time_left)
+struct RenderSettings
 {
-    MosaicsDatabase mosaics_database(database_path);
+    int output_width;
+    int x_resolution_in_stones;
+    int min_distance;
+};
 
-
-
-    int source_stone_width = source_view.width() / x_res_in_stones;
-    int source_stone_height = (double)source_stone_width / mosaics_database.aspect_ratio();
-    int y_res_in_stones = source_view.height() / source_stone_height;
-
-    int output_stone_width = output_width/x_res_in_stones;
-    int output_stone_height = (double)output_stone_width / mosaics_database.aspect_ratio();
-    int output_height = output_stone_height * y_res_in_stones;
-
-    OutputMatrix output(x_res_in_stones, y_res_in_stones);
-    JPG output_image(output_image_path, output_width, output_height, output_stone_width, output_stone_height);
-
-    int number_of_stones = y_res_in_stones * x_res_in_stones;
-    vector<Position> positions(number_of_stones);
-
-    if(static_cast<size_t>(min_distance*min_distance) > mosaics_database.stones().size())
-    {
-        throw std::runtime_error("Not enough stones for current settings. Either use a bigger database or reduce min-distance.");
-    }
-
-    for(int i=0;i<y_res_in_stones;++i)
-    {
-        for(int j=0;j<x_res_in_stones;++j)
-        {
-            Position position; position.x = j; position.y = i;
-            positions[i*x_res_in_stones+j] = position;
-        }
-    }
-    std::random_shuffle(positions.begin(), positions.end());
-    if(number_of_threads > number_of_stones)
-    {
-        throw std::runtime_error("Cannot use more threads than mosaic stones.");
-    }
-    int stones_per_thread = number_of_stones / number_of_threads;
-
-    Progress progress(number_of_stones, print_time_left);
-
-    ThreadList thread_list;
-    RenderParameters<SourceView> render_parameters;
-    render_parameters.config.min_distance = min_distance;
-    render_parameters.config.x_res_in_stones = x_res_in_stones;
-    render_parameters.source_stone_size.width = source_stone_width;
-    render_parameters.source_stone_size.height = source_stone_height;
-    render_parameters.mosaics_database = &mosaics_database;
-    render_parameters.output = &output;
-    render_parameters.output_image = &output_image;
-    render_parameters.progress = &progress;
-    render_parameters.positions = &positions;
-    render_parameters.source_view = source_view;
-    for(int i=0; i<number_of_threads-1;++i)
-    {
-        render_parameters.row_limits.min = i*stones_per_thread;
-        render_parameters.row_limits.max = render_parameters.row_limits.min+stones_per_thread-1;
-        thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
-    }
-    render_parameters.row_limits.min = (number_of_threads-1)*stones_per_thread;
-    render_parameters.row_limits.max = number_of_stones-1;
-    thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
-
-    BOOST_FOREACH(ThreadPtr thread, thread_list)
-    {
-        thread->join();
-    }
-    return output;
+inline int calc_source_stone_width(int source_view_width, int xres_in_stones)
+{
+    return source_view_width / xres_in_stones;
 }
+
+inline int calc_source_stone_height(int source_view_width, int xres_in_stones, double aspect_ratio)
+{
+    return (double)calc_source_stone_width(source_view_width, xres_in_stones) / aspect_ratio;
+}
+
+inline int calc_y_res_in_stones(int source_view_width, int source_view_height, int xres_in_stones, double aspect_ratio)
+{
+    return source_view_height / calc_source_stone_height(source_view_width, xres_in_stones, aspect_ratio);
+}
+
+class Renderer
+{
+
+public:
+    Renderer(MosaicsDatabase& mosaics_database, int number_of_threads) :
+        number_of_threads_(number_of_threads), mosaics_database_(mosaics_database) {}
+
+    template<class SourceView>
+    OutputMatrix render(const SourceView& source_view, JPG& output_image, const RenderSettings& renderSettings, bool print_time_left)
+    {
+        int source_stone_width = calc_source_stone_width(source_view.width(), renderSettings.x_resolution_in_stones);
+        int source_stone_height = calc_source_stone_height(source_view.width(), renderSettings.x_resolution_in_stones, mosaics_database_.aspect_ratio());
+        int y_res_in_stones = calc_y_res_in_stones(source_view.width(), source_view.height(), renderSettings.x_resolution_in_stones, mosaics_database_.aspect_ratio());
+
+        int output_stone_width = renderSettings.output_width/renderSettings.x_resolution_in_stones;
+        int output_stone_height = (double)output_stone_width / mosaics_database_.aspect_ratio();
+
+        cout << "output_width: " << renderSettings.output_width << "output_stone_width: " << output_stone_width << endl;
+
+        OutputMatrix output(renderSettings.x_resolution_in_stones, y_res_in_stones);
+
+        int number_of_stones = y_res_in_stones * renderSettings.x_resolution_in_stones;
+        vector<Position> positions(number_of_stones);
+
+        if(static_cast<size_t>(renderSettings.min_distance *renderSettings.min_distance) > mosaics_database_.stones().size())
+        {
+            throw std::runtime_error("Not enough stones for current settings. Either use a bigger database or reduce min-distance.");
+        }
+
+        for(int i=0;i<y_res_in_stones;++i)
+        {
+            for(int j=0;j<renderSettings.x_resolution_in_stones;++j)
+            {
+                Position position; position.x = j; position.y = i;
+                positions[i*renderSettings.x_resolution_in_stones+j] = position;
+            }
+        }
+        std::random_shuffle(positions.begin(), positions.end());
+        if(number_of_threads_ > number_of_stones)
+        {
+            throw std::runtime_error("Cannot use more threads than mosaic stones.");
+        }
+        int stones_per_thread = number_of_stones / number_of_threads_;
+
+        Progress progress(number_of_stones, print_time_left);
+
+        ThreadList thread_list;
+        RenderParameters<SourceView> render_parameters;
+        render_parameters.config.min_distance = renderSettings.min_distance;
+        render_parameters.config.x_res_in_stones = renderSettings.x_resolution_in_stones;
+        render_parameters.source_stone_size.width = source_stone_width;
+        render_parameters.source_stone_size.height = source_stone_height;
+        render_parameters.output_stone_size.width = output_stone_width;
+        render_parameters.output_stone_size.height = output_stone_height;
+        render_parameters.mosaics_database = &mosaics_database_;
+        render_parameters.output = &output;
+        render_parameters.output_image = &output_image;
+        render_parameters.progress = &progress;
+        render_parameters.positions = &positions;
+        render_parameters.source_view = source_view;
+        for(int i=0; i<number_of_threads_-1;++i)
+        {
+            render_parameters.row_limits.min = i*stones_per_thread;
+            render_parameters.row_limits.max = render_parameters.row_limits.min+stones_per_thread-1;
+            thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
+        }
+        render_parameters.row_limits.min = (number_of_threads_-1)*stones_per_thread;
+        render_parameters.row_limits.max = number_of_stones-1;
+        thread_list.push_back(ThreadPtr(new boost::thread(find_and_set_stones<SourceView>, render_parameters)));
+
+        BOOST_FOREACH(ThreadPtr thread, thread_list)
+        {
+            thread->join();
+        }
+        return output;
+    }
+private:
+    int number_of_threads_;
+    MosaicsDatabase& mosaics_database_;
+};
 
 double aspect_ratio_from_input(const string& input)
 {
@@ -965,6 +993,14 @@ string version()
     return "phomo " VERSION;
 }
 
+inline int calc_output_height(int source_view_width, int source_view_height, int output_width, int xres_in_stones, double aspect_ratio)
+{
+    int y_res_in_stones = source_view_height / calc_source_stone_height(source_view_width, xres_in_stones, aspect_ratio);
+    int output_stone_width = output_width/xres_in_stones;
+    int output_stone_height = (double)output_stone_width / aspect_ratio;
+    return output_stone_height * y_res_in_stones;
+}
+
 int main(int argc, char** argv)
 {
     program_options::variables_map input = parse_command_line(argc, argv);
@@ -996,49 +1032,57 @@ int main(int argc, char** argv)
             gil::jpeg_read_and_convert_image(source_img_path, source_image);
             gil::rgb8_view_t source_view = view(source_image);
 
+            MosaicsDatabase mosaics_database(input["database-filename"].as<string> ());
+
+            Renderer renderer(mosaics_database, input["number-of-threads"].as<int>());
+            RenderSettings renderSettings = {
+                    input["output-width"].as<int>(),
+                    input["x-resolution-in-stones"].as<int>(),
+                    input["min-distance"].as<int>()
+            };
 
             switch(orientation)
             {
             case NOT_ROTATED:
-                render(source_view,
-                    input["database-filename"].as<string> (),
-                    input["output-filename"].as<string> (),
-                    input["output-width"].as<int>(),
-                    input["x-resolution-in-stones"].as<int>(),
-                    input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>(),
+            {
+                int output_height = calc_output_height(source_view.width(), source_view.height(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
+                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
+                renderer.render(source_view,
+                    output_image,
+                    renderSettings,
                     input.count("print-time-left"));
-                break;
+            }
+            break;
             case ROTATED_180:
-                render(gil::rotated180_view(source_view),
-                    input["database-filename"].as<string> (),
-                    input["output-filename"].as<string> (),
-                    input["output-width"].as<int>(),
-                    input["x-resolution-in-stones"].as<int>(),
-                    input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>(),
+            {
+                int output_height = calc_output_height(source_view.width(), source_view.height(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
+                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
+                renderer.render(gil::rotated180_view(source_view),
+                    output_image,
+                    renderSettings,
                     input.count("print-time-left"));
-                break;
+            }
+            break;
             case ROTATED_90CCW:
-                render(gil::rotated90cw_view(source_view),
-                    input["database-filename"].as<string> (),
-                    input["output-filename"].as<string> (),
-                    input["output-width"].as<int>(),
-                    input["x-resolution-in-stones"].as<int>(),
-                    input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>(),
+            {
+                int output_height = calc_output_height(source_view.height(), source_view.width(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
+                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
+                renderer.render(gil::rotated90cw_view(source_view),
+                    output_image,
+                    renderSettings,
                     input.count("print-time-left"));
-                break;
+            }
+            break;
             case ROTATED_90CW:
-                render(gil::rotated90ccw_view(source_view),
-                    input["database-filename"].as<string> (),
-                    input["output-filename"].as<string> (),
-                    input["output-width"].as<int>(),
-                    input["x-resolution-in-stones"].as<int>(),
-                    input["min-distance"].as<int>(),
-                    input["number-of-threads"].as<int>(),
+            {
+                int output_height = calc_output_height(source_view.height(), source_view.width(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
+                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
+                renderer.render(gil::rotated90ccw_view(source_view),
+                    output_image,
+                    renderSettings,
                     input.count("print-time-left"));
-                break;
+            }
+            break;
             }
         }
         else

@@ -62,6 +62,7 @@ using std::ofstream;
 using std::ifstream;
 //using filesystem::recursive_directory_iterator;
 using std::vector;
+using std::ptrdiff_t;
 using boost::algorithm::iends_with;
 using boost::lexical_cast;
 using boost::algorithm::split;
@@ -196,6 +197,9 @@ Orientation orientation_from_image_path(const string& path)
     }
 
 }
+
+typedef gil::point2<std::ptrdiff_t> Dimensions;
+typedef gil::point2<std::ptrdiff_t> Position;
 
 void swap(gil::point2<std::ptrdiff_t>& dimensions)
 {
@@ -546,15 +550,15 @@ MosaicStonePtr find_closest_match(const list<MosaicStonePtr>& stones, const vect
 class JPG
 {
 public:
-    JPG(const string& filename, int width, int height) :
-        filename_(filename), image_(width, height)
+    JPG(const Dimensions& dimensions) :
+        image_(dimensions)
     {
        view_ = view(image_);
     }
 
-    ~JPG()
+    void write(const string& filename)
     {
-        gil::jpeg_write_view(filename_, view_, 85);
+        gil::jpeg_write_view(filename, view_, 85);
     }
 
     void set_mosaic_stone(int x, int y, int stone_width, int stone_height, const string& current_path)
@@ -569,19 +573,25 @@ public:
 
             gil::rgb8_image_t mosaic_stone_img_small(stone_width, stone_height);
 
+            Position o;
+
             switch(orientation)
             {
             case NOT_ROTATED:
-                gil::resize_view(gil::subimage_view(const_view(mosaic_stone_img_big), 0, 0, dimensions.x, dimensions.y), view(mosaic_stone_img_small), gil::bilinear_sampler());
+                gil::resize_view(gil::subimage_view(const_view(mosaic_stone_img_big), o, dimensions),
+                        view(mosaic_stone_img_small), gil::bilinear_sampler());
                 break;
             case ROTATED_180:
-                gil::resize_view(gil::subimage_view(rotated180_view(const_view(mosaic_stone_img_big)), 0, 0, dimensions.x, dimensions.y), view(mosaic_stone_img_small), gil::bilinear_sampler());
+                gil::resize_view(gil::subimage_view(rotated180_view(const_view(mosaic_stone_img_big)), o, dimensions),
+                        view(mosaic_stone_img_small), gil::bilinear_sampler());
                 break;
             case ROTATED_90CCW:
-                gil::resize_view(gil::subimage_view(rotated90cw_view(const_view(mosaic_stone_img_big)), 0, 0, dimensions.x, dimensions.y), view(mosaic_stone_img_small), gil::bilinear_sampler());
+                gil::resize_view(gil::subimage_view(rotated90cw_view(const_view(mosaic_stone_img_big)), o, dimensions),
+                        view(mosaic_stone_img_small), gil::bilinear_sampler());
                 break;
             case ROTATED_90CW:
-                gil::resize_view(gil::subimage_view(rotated90ccw_view(const_view(mosaic_stone_img_big)), 0, 0, dimensions.x, dimensions.y), view(mosaic_stone_img_small), gil::bilinear_sampler());
+                gil::resize_view(gil::subimage_view(rotated90ccw_view(const_view(mosaic_stone_img_big)), o, dimensions),
+                        view(mosaic_stone_img_small), gil::bilinear_sampler());
                 break;
             }
 
@@ -609,7 +619,7 @@ class OutputMatrix
     mutable boost::mutex mutex;
 
 public:
-    OutputMatrix(int xres, int yres) : matrix_(xres, vector<MosaicStonePtr>(yres))
+    OutputMatrix(const Dimensions& dimensions) : matrix_(dimensions.x, vector<MosaicStonePtr>(dimensions.y))
     {}
 
     OutputMatrix(const OutputMatrix& other)
@@ -752,16 +762,31 @@ public:
     }
 };
 
-struct Position
+struct RenderSettings
 {
-    int x,y;
+    ptrdiff_t min_distance;
+    Dimensions output_dimensions;
+    Dimensions resolution_in_stones;
+    RenderSettings(const Dimensions& input_dimensions, ptrdiff_t output_width, ptrdiff_t x_resolution_in_stones, ptrdiff_t min_distance_, double aspect_ratio) :
+        min_distance(min_distance_)
+    {
+        resolution_in_stones.x = x_resolution_in_stones;
+        int source_stone_width = input_dimensions.x / resolution_in_stones.x;
+        int source_stone_height = (double)source_stone_width / aspect_ratio;
+        resolution_in_stones.y = input_dimensions.y / source_stone_height;
+
+        output_dimensions.x = output_width;
+        int output_stone_width = output_dimensions.x/resolution_in_stones.x;
+        int output_stone_height = (double)output_stone_width / aspect_ratio;
+        output_dimensions.y = output_stone_height * resolution_in_stones.y;
+    }
 };
 
 template<class SourceView>
 struct RenderParameters
 {
     Limits row_limits;
-    Configuration config;
+    int min_distance;
     Size source_stone_size;
     Size output_stone_size;
     SourceView source_view;
@@ -798,7 +823,7 @@ void find_and_set_stones(RenderParameters<SourceView> params)
             boost::mutex::scoped_lock lock(mosaic_stone_set_mutex);
 
             timer.restart();
-            list<MosaicStonePtr> excluded_stones = create_distance_caused_excludes(stone_x, stone_y, output_matrix, params.config.min_distance);
+            list<MosaicStonePtr> excluded_stones = create_distance_caused_excludes(stone_x, stone_y, output_matrix, params.min_distance);
             timer.print_elapsed_with_label("Elapsed time to find excludes");
 
             timer.restart();
@@ -832,13 +857,6 @@ struct RandomShuffler
     }
 };
 
-struct RenderSettings
-{
-    int output_width;
-    int x_resolution_in_stones;
-    int min_distance;
-};
-
 inline int calc_source_stone_width(int source_view_width, int xres_in_stones)
 {
     return source_view_width / xres_in_stones;
@@ -862,33 +880,29 @@ public:
         number_of_threads_(number_of_threads), mosaics_database_(mosaics_database) {}
 
     template<class SourceView>
-    OutputMatrix render(const SourceView& source_view, JPG& output_image, const RenderSettings& renderSettings, bool print_time_left)
+    OutputMatrix render(const SourceView& source_view, JPG& output_image, const RenderSettings& render_settings, bool print_time_left)
     {
-        int source_stone_width = calc_source_stone_width(source_view.width(), renderSettings.x_resolution_in_stones);
-        int source_stone_height = calc_source_stone_height(source_view.width(), renderSettings.x_resolution_in_stones, mosaics_database_.aspect_ratio());
-        int y_res_in_stones = calc_y_res_in_stones(source_view.width(), source_view.height(), renderSettings.x_resolution_in_stones, mosaics_database_.aspect_ratio());
-
-        int output_stone_width = renderSettings.output_width/renderSettings.x_resolution_in_stones;
+        int source_stone_width = source_view.width() / render_settings.resolution_in_stones.x;
+        int source_stone_height = source_stone_width / mosaics_database_.aspect_ratio();
+        int output_stone_width = render_settings.output_dimensions.x / render_settings.resolution_in_stones.x;
         int output_stone_height = (double)output_stone_width / mosaics_database_.aspect_ratio();
 
-        cout << "output_width: " << renderSettings.output_width << "output_stone_width: " << output_stone_width << endl;
+        OutputMatrix output(render_settings.resolution_in_stones);
 
-        OutputMatrix output(renderSettings.x_resolution_in_stones, y_res_in_stones);
-
-        int number_of_stones = y_res_in_stones * renderSettings.x_resolution_in_stones;
+        int number_of_stones = render_settings.resolution_in_stones.y * render_settings.resolution_in_stones.x;
         vector<Position> positions(number_of_stones);
 
-        if(static_cast<size_t>(renderSettings.min_distance *renderSettings.min_distance) > mosaics_database_.stones().size())
+        if(static_cast<size_t>(render_settings.min_distance *render_settings.min_distance) > mosaics_database_.stones().size())
         {
             throw std::runtime_error("Not enough stones for current settings. Either use a bigger database or reduce min-distance.");
         }
 
-        for(int i=0;i<y_res_in_stones;++i)
+        for(int i=0;i<render_settings.resolution_in_stones.y;++i)
         {
-            for(int j=0;j<renderSettings.x_resolution_in_stones;++j)
+            for(int j=0;j<render_settings.resolution_in_stones.x;++j)
             {
                 Position position; position.x = j; position.y = i;
-                positions[i*renderSettings.x_resolution_in_stones+j] = position;
+                positions[i*render_settings.resolution_in_stones.x+j] = position;
             }
         }
         std::random_shuffle(positions.begin(), positions.end());
@@ -902,8 +916,7 @@ public:
 
         ThreadList thread_list;
         RenderParameters<SourceView> render_parameters;
-        render_parameters.config.min_distance = renderSettings.min_distance;
-        render_parameters.config.x_res_in_stones = renderSettings.x_resolution_in_stones;
+        render_parameters.min_distance = render_settings.min_distance;
         render_parameters.source_stone_size.width = source_stone_width;
         render_parameters.source_stone_size.height = source_stone_height;
         render_parameters.output_stone_size.width = output_stone_width;
@@ -993,12 +1006,16 @@ string version()
     return "phomo " VERSION;
 }
 
-inline int calc_output_height(int source_view_width, int source_view_height, int output_width, int xres_in_stones, double aspect_ratio)
+Dimensions swap_dimensions_if(const Dimensions& dimensions, Orientation orientation)
 {
-    int y_res_in_stones = source_view_height / calc_source_stone_height(source_view_width, xres_in_stones, aspect_ratio);
-    int output_stone_width = output_width/xres_in_stones;
-    int output_stone_height = (double)output_stone_width / aspect_ratio;
-    return output_stone_height * y_res_in_stones;
+    if (orientation == NOT_ROTATED || orientation == ROTATED_180)
+    {
+        return dimensions;
+    }
+    else
+    {
+        return Dimensions(dimensions.y, dimensions.x);
+    }
 }
 
 int main(int argc, char** argv)
@@ -1035,55 +1052,39 @@ int main(int argc, char** argv)
             MosaicsDatabase mosaics_database(input["database-filename"].as<string> ());
 
             Renderer renderer(mosaics_database, input["number-of-threads"].as<int>());
-            RenderSettings renderSettings = {
+            RenderSettings renderSettings(
+                    swap_dimensions_if(source_view.dimensions(), orientation),
                     input["output-width"].as<int>(),
                     input["x-resolution-in-stones"].as<int>(),
-                    input["min-distance"].as<int>()
-            };
+                    input["min-distance"].as<int>(),
+                    mosaics_database.aspect_ratio());
+
+            JPG output_image(renderSettings.output_dimensions);
 
             switch(orientation)
             {
             case NOT_ROTATED:
-            {
-                int output_height = calc_output_height(source_view.width(), source_view.height(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
-                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
                 renderer.render(source_view,
-                    output_image,
-                    renderSettings,
+                    output_image, renderSettings,
                     input.count("print-time-left"));
-            }
-            break;
+                break;
             case ROTATED_180:
-            {
-                int output_height = calc_output_height(source_view.width(), source_view.height(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
-                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
                 renderer.render(gil::rotated180_view(source_view),
-                    output_image,
-                    renderSettings,
+                    output_image, renderSettings,
                     input.count("print-time-left"));
-            }
-            break;
+                break;
             case ROTATED_90CCW:
-            {
-                int output_height = calc_output_height(source_view.height(), source_view.width(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
-                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
                 renderer.render(gil::rotated90cw_view(source_view),
-                    output_image,
-                    renderSettings,
+                    output_image, renderSettings,
                     input.count("print-time-left"));
-            }
-            break;
+                break;
             case ROTATED_90CW:
-            {
-                int output_height = calc_output_height(source_view.height(), source_view.width(), renderSettings.output_width, renderSettings.x_resolution_in_stones, mosaics_database.aspect_ratio());
-                JPG output_image(input["output-filename"].as<string> (), renderSettings.output_width, output_height);
                 renderer.render(gil::rotated90ccw_view(source_view),
-                    output_image,
-                    renderSettings,
+                    output_image, renderSettings,
                     input.count("print-time-left"));
+                break;
             }
-            break;
-            }
+            output_image.write(input["output-filename"].as<string>());
         }
         else
         {

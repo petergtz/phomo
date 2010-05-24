@@ -1,0 +1,15 @@
+<Addin namespace="FSpot"
+	id="PhomoExtension"
+	version="0.6.0.0"
+	description="Create photomosaics using Phomo"
+	author="Peter Goetz"
+	name="Phomo"
+	url="http://f-spot.org/Extensions"
+	category="Tools"> 
+	<Dependencies>
+		<Addin id="Core" version="0.6"/>
+	</Dependencies>
+	<Extension path = "/FSpot/Menus/Tools">
+		<Command id = "Phomo" _label = "Create p_hotomosaic using Phomo" command_type = "PhomoExtension.Phomo" />
+	</Extension>
+</Addin>

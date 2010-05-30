@@ -3,16 +3,22 @@
 
 AC_PREREQ([2.64])
 AC_INIT([phomo], [0.3], [p3rg3z@users.sourceforge.com])
-AM_INIT_AUTOMAKE([1.11 foreign])
+AM_INIT_AUTOMAKE([1.11 -Wall foreign])
+AC_CONFIG_FILES([f-spot-extension/Makefile])
 
 
 # Checks for programs.
 AC_PROG_CXX
-#gcc_version=`gcc -dumpversion`
-#AC_MSG_ERROR(`gcc -dumpversion`)
-#if test `gcc -dumpversion` = "4.4.3" ; then
-#AC_MSG_ERROR(wrong version AX_GCC_VERSION)
-#fi
+#GCC_VERSION=`gcc -dumpversion`
+AC_CHECK_PROG(CXX_4_3, g++-4.3, yes, no) # checks if g++-4.3 exists and if yes, sets CXX_4_3=yes.
+if test "$CXX_4_3" = "no" ; then
+     AC_MSG_ERROR(You need to have g++ 4.3 installed. Boost GIL/MPL 1.40 does not compile with newer versions.)
+fi
+
+PKG_CHECK_MODULES(GTKSHARP2, gtk-sharp-2.0)
+PKG_CHECK_MODULES(FSPOT, f-spot)
+echo "$FSPOT_CFLAGS"
+#glade-sharp-2.0
 
 # Checks for libraries.
 
@@ -41,6 +47,12 @@ AC_TYPE_SIZE_T
 
 # Checks for library functions.
 
+AC_PATH_PROG(GMCS, gmcs, no) # checks if gmcs exists and if yes, sets GMCS to its path, otherwise "no".
+if test "$GMCS" = "no" ; then
+     AC_MSG_ERROR(You need to have mono gmcs installed.)
+fi
+
+AC_SUBST(GMCS) # this will replace GMCS in Makefile.am by prefix/gmcs
 
 
 AC_OUTPUT(Makefile)

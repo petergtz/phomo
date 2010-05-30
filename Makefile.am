@@ -8,4 +8,6 @@ LIBS = -lboost_program_options -ljpeg -lexiv2 -lboost_thread -lboost_filesystem
 # not compile with GCC 4.4
 CXX=g++-4.3
 
-AM_CXXFLAGS = -Wall
+SUBDIRS = f-spot-extension
+
+

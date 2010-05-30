@@ -1,5 +1,7 @@
-all: Phomo.dll
+SOURCES = \
+	Phomo.cs
 
+	
 PACKAGES = \
 	-pkg:f-spot \
 	-pkg:gtk-sharp-2.0 \
@@ -12,21 +14,13 @@ RESOURCES = \
 	-resource:Phomo.glade \
 	-resource:Phomo.addin.xml
 
-SOURCES = \
-	Phomo.cs
+all: Phomo.dll
 
-install: all
-	mkdir -p ~/.config/f-spot/addins/
-	cp *.dll ~/.config/f-spot/addins/
-
-mpack: Phomo.dll
-	mautil p Phomo.dll
-
-%.dll: %.cs %.glade
+Phomo.dll: Phomo.cs Phomo.glade Phomo.addin.xml
 	gmcs -debug -target:library $(SOURCES) $(PACKAGES) $(ASSEMBLIES) $(RESOURCES)
 
-clean:
+clean-local:
 	rm -f *.dll *~ *.bak .mpack *.gladep
-
+	
 PHONY:
-	install clean all mpack
+	install clean-local all mpack

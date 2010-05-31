@@ -1,3 +1,5 @@
+fspotdir = $(libdir)/f-spot/extensions
+fspot_DATA = Phomo.dll	
 SOURCES = \
 	Phomo.cs
 
@@ -14,13 +16,13 @@ RESOURCES = \
 	-resource:Phomo.glade \
 	-resource:Phomo.addin.xml
 
-all: Phomo.dll
-
 Phomo.dll: Phomo.cs Phomo.glade Phomo.addin.xml
 	gmcs -debug -target:library $(SOURCES) $(PACKAGES) $(ASSEMBLIES) $(RESOURCES)
 
-clean-local:
-	rm -f *.dll *~ *.bak .mpack *.gladep
+
+CLEANFILES = *.dll *~ *.bak .mpack *.gladep
+DISTCLEANFILES = Makefile
+EXTRA_DIST = Phomo.cs Phomo.glade Phomo.addin.xml
+
 	
-PHONY:
-	install clean-local all mpack
+

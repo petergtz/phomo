@@ -51,7 +51,6 @@ namespace PhomoExtension {
 		[Glade.Widget] Gtk.SpinButton min_distance;
 		
 		FSpot.UI.Dialog.ThreadProgressDialog progress_dialog;
-		System.Threading.Thread command_thread;
 		
 		
 		const string PHOMO_PATH = "phomo";
@@ -65,8 +64,8 @@ namespace PhomoExtension {
 				return;
 			}
 			if (!IsBackendInstalled()) {
-				InfoDialog(Catalog.GetString ("DVDSlideshow not available"),
-					   Catalog.GetString ("The dvd-slideshow executable was not found in path. Please check that you have it installed and that you have permissions to execute it"),
+				InfoDialog(Catalog.GetString ("Phomo not available"),
+					   Catalog.GetString ("The phomo executable was not found in then path. Please check that you have it installed and that you have permissions to execute it"),
 					   Gtk.MessageType.Error);
 				return;
 			}
@@ -164,11 +163,11 @@ namespace PhomoExtension {
 				foreach (string tag_entry_string in tag_entry.GetTypedTagNames()) {
 					tag_entry_strings.Add (tag_entry_string);
 				}
-				command_thread = new System.Threading.Thread (new System.Threading.ThreadStart (createMosaics));
+				System.Threading.Thread command_thread = new System.Threading.Thread (createMosaics);
 				command_thread.Name = Catalog.GetString ("Creating Photomosaic");
 				progress_dialog = new FSpot.UI.Dialog.ThreadProgressDialog (command_thread, 1);
-				progress_dialog.Start ();
 				progress_dialog.Response += HandleProgressAbort;
+				progress_dialog.Start ();
 			}
 			dialog.Destroy ();
 		}

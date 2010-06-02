@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.64])
-AC_INIT([phomo], [0.3.1], [p3rg3z@users.sourceforge.com])
+AC_INIT([phomo], [0.3.2], [p3rg3z@users.sourceforge.com])
 AM_INIT_AUTOMAKE([1.11 -Wall foreign])
 
 

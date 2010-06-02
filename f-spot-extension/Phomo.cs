@@ -22,9 +22,29 @@ using FSpot.Filters;
 using FSpot.UI.Dialog;
 using FSpot.Utils;
 using Mono.Unix;
+using System.Globalization;
+
+using System.Xml;
+using System.Xml.Serialization;
+
 
 namespace PhomoExtension {
-	
+
+	public struct Configuration {
+		public bool create_new_db_radio_button;
+		public bool tags_radio_button;
+		public ArrayList tags;
+		public string	aspect_ratio_x;
+		public string aspect_ratio_y;
+		public bool save_for_later_checkbox;
+		public string save_for_later_filename;
+		public string	save_for_later_folder_chooser;
+		public bool use_existing_db_button;
+		public string use_existing_file_chooser;
+		public int	x_res_in_pixels;
+		public int x_res_in_stones;
+		public int min_distance;
+	}
 	
 	public class Phomo: ICommand
 	{
@@ -112,32 +132,26 @@ namespace PhomoExtension {
 		
 		void init_controls() {
 			try {
-				using (System.IO.StreamReader file = new System.IO.StreamReader(config_file))
-				{
-					if(file.ReadLine() == "create_new") {
-						create_new_db_radio_button.Active = true;
-						if(file.ReadLine() == "tags") {
-							tags_radio_button.Active = true;
-							tag_entry.UpdateFromTagNames (file.ReadLine().Split('|'));
-						} else {
-							tags_radio_button.Active = false;
-						}
-						aspect_ratio_x.Text = file.ReadLine();
-						aspect_ratio_y.Text = file.ReadLine();
-						if(file.ReadLine() == "save_for_later_use") {
-							save_for_later_checkbox.Active = true;
-							save_for_later_filename.Text = file.ReadLine();
-							save_for_later_folder_chooser.SetFilename(file.ReadLine());
-						}
-					} else {
-						use_existing_db_button.Active = true;
-						use_existing_file_chooser.SetFilename(file.ReadLine());
-					}
-					x_res_in_pixels.Value = System.Convert.ToDouble(file.ReadLine());
-					x_res_in_stones.Value = System.Convert.ToDouble(file.ReadLine());
-					min_distance.Value = System.Convert.ToDouble(file.ReadLine());
+				using (Stream stream = File.Open(config_file, FileMode.Open)) {
+					var serializer = new XmlSerializer(typeof(Configuration));
+					var config = (Configuration)serializer.Deserialize(stream);
+					create_new_db_radio_button.Active = config.create_new_db_radio_button;
+					tags_radio_button.Active = config.tags_radio_button;
+					tag_entry.UpdateFromTagNames((string[])config.tags.ToArray(typeof(string)));
+					aspect_ratio_x.Text = config.aspect_ratio_x.ToString();
+					aspect_ratio_y.Text = config.aspect_ratio_y.ToString();
+					save_for_later_checkbox.Active = config.save_for_later_checkbox;
+					save_for_later_filename.Text = config.save_for_later_filename;
+					save_for_later_folder_chooser.SetFilename(config.save_for_later_folder_chooser);
+					use_existing_db_button.Active = config.use_existing_db_button;
+					use_existing_file_chooser.SetFilename(config.use_existing_file_chooser);
+					x_res_in_pixels.Value = System.Convert.ToDouble(config.x_res_in_pixels);
+					x_res_in_stones.Value = System.Convert.ToDouble(config.x_res_in_stones);
+					min_distance.Value = System.Convert.ToDouble(config.min_distance);
 				}
-			} catch {}
+			} catch {
+				System.Console.WriteLine("Could not open Phomo config file. Using defaults.");
+			}
 
 		}
 		
@@ -156,13 +170,10 @@ namespace PhomoExtension {
 			save_for_later_hbox.Sensitive = save_for_later_checkbox.Active;
 		}
 
-		ArrayList tag_entry_strings = new ArrayList();
+		Configuration config;
 		void on_dialog_response (object obj, ResponseArgs args) {
 			if (args.ResponseId == ResponseType.Ok) {
-				save_controls();
-				foreach (string tag_entry_string in tag_entry.GetTypedTagNames()) {
-					tag_entry_strings.Add (tag_entry_string);
-				}
+				config = save_controls();
 				System.Threading.Thread command_thread = new System.Threading.Thread (createMosaics);
 				command_thread.Name = Catalog.GetString ("Creating Photomosaic");
 				progress_dialog = new FSpot.UI.Dialog.ThreadProgressDialog (command_thread, 1);
@@ -173,37 +184,32 @@ namespace PhomoExtension {
 		}
 
 		string config_file = Path.Combine(Environment.GetFolderPath (Environment.SpecialFolder.ApplicationData), Path.Combine("f-spot", "phomo.config"));
-		void save_controls() {
+		Configuration save_controls() {
+			var config = new Configuration();
+			config.create_new_db_radio_button = create_new_db_radio_button.Active;
+			config.tags_radio_button = tags_radio_button.Active;
+			config.tags = new ArrayList(tag_entry.GetTypedTagNames());
+			config.aspect_ratio_x = aspect_ratio_x.Text;
+			config.aspect_ratio_y = aspect_ratio_y.Text;
+			config.save_for_later_checkbox = save_for_later_checkbox.Active;
+			config.save_for_later_filename = save_for_later_filename.Text;
+			config.save_for_later_folder_chooser = save_for_later_folder_chooser.Filename;
+			config.use_existing_db_button = use_existing_db_button.Active;
+			config.use_existing_file_chooser = use_existing_file_chooser.Filename;
+			config.x_res_in_pixels = x_res_in_pixels.ValueAsInt;
+			config.x_res_in_stones = x_res_in_stones.ValueAsInt;
+			config.min_distance = min_distance.ValueAsInt;
+			
 			try {
-				using (System.IO.StreamWriter file = new System.IO.StreamWriter(config_file))
+				using (Stream stream = File.Open(config_file, FileMode.Create))
 				{
-					if(create_new_db_radio_button.Active) {
-						file.WriteLine("create_new");
-						if(tags_radio_button.Active) {
-							
-							file.WriteLine("tags");
-							file.WriteLine(String.Join("|", tag_entry.GetTypedTagNames()));
-						} else {
-							file.WriteLine("current_collection");
-						}
-						file.WriteLine(aspect_ratio_x.Text);
-						file.WriteLine(aspect_ratio_y.Text);
-						if(save_for_later_checkbox.Active) {
-							file.WriteLine("save_for_later_use");
-							file.WriteLine(save_for_later_filename.Text);
-							file.WriteLine(save_for_later_folder_chooser.Filename);
-						} else {
-							file.WriteLine("do_not_save_for_later_use");
-						}
-					} else {
-						file.WriteLine("use_existing");
-						file.WriteLine(use_existing_file_chooser.Filename);
-					}
-					file.WriteLine(x_res_in_pixels.ValueAsInt);
-					file.WriteLine(x_res_in_stones.ValueAsInt);
-					file.WriteLine(min_distance.ValueAsInt);
+					var serializer = new XmlSerializer(typeof(Configuration));
+					serializer.Serialize(stream, config);
 				}
-			} catch {}
+			} catch (Exception e) {
+				Console.WriteLine(e);
+			}
+			return config;
 		}
 		
 		void HandleProgressAbort(object sender, Gtk.ResponseArgs args)
@@ -220,16 +226,16 @@ namespace PhomoExtension {
 			int error_count = -1;
 			try {
 				progress_dialog.Fraction = 0.0;
-				if(create_new_db_radio_button.Active) {
-					if (save_for_later_checkbox.Active)	{
-						databaseFilename =  System.IO.Path.Combine(save_for_later_folder_chooser.Filename, save_for_later_filename.Text);
+				if(config.create_new_db_radio_button) {
+					if (config.save_for_later_checkbox)	{
+						databaseFilename =  System.IO.Path.Combine(config.save_for_later_folder_chooser, config.save_for_later_filename);
 					}
 					else {
 						databaseFilename = System.IO.Path.GetTempFileName();
 					}
 					buildDatabase(databaseFilename, aspect_ratio_x.Text + "x" + aspect_ratio_y.Text);
 				} else {
-					databaseFilename = use_existing_file_chooser.Filename;
+					databaseFilename = config.use_existing_file_chooser;
 				}
 				progress_dialog.Fraction = 0.5;
 				error_count = 0;
@@ -241,7 +247,7 @@ namespace PhomoExtension {
 						string name = GetVersionName (photo);
 						System.Uri outputUri = GetUriForVersionName (photo, name);
 						render(databaseFilename, photo.DefaultVersionUri.LocalPath, outputUri.LocalPath, 
-						       x_res_in_stones.ValueAsInt, x_res_in_pixels.ValueAsInt, min_distance.ValueAsInt, i*progress_slice, progress_slice);
+						       config.x_res_in_stones, config.x_res_in_pixels, config.min_distance, i*progress_slice, progress_slice);
 						AddAndChangeToNewVersion(photo, outputUri, name);					
 					} catch (Exception)	{
 						error_count++;
@@ -269,7 +275,7 @@ namespace PhomoExtension {
 		}
 		
 		void deleteTempFile() {
-			if (create_new_db_radio_button.Active && !save_for_later_checkbox.Active && databaseFilename != "") {
+			if (config.create_new_db_radio_button && !config.save_for_later_checkbox && databaseFilename != "") {
 				try {
 					System.IO.File.Delete(databaseFilename);
 				} catch (System.Exception) {}
@@ -328,7 +334,7 @@ namespace PhomoExtension {
         }
 
 		private Photo[] mosaicStones() {
-			if (tags_radio_button.Active) {
+			if (config.tags_radio_button) {
 				Db db = MainWindow.Toplevel.Database;
 				FSpot.PhotoQuery mini_query = new FSpot.PhotoQuery (db.Photos);
 				mini_query.Terms = FSpot.OrTerm.FromTags (tags(db));
@@ -344,7 +350,7 @@ namespace PhomoExtension {
 		
 		Tag[] tags(Db db) {
 			List<Tag> taglist = new List<Tag>();
-			foreach (string tag_name in tag_entry_strings) {
+			foreach (string tag_name in config.tags) {
 				Tag t = db.Tags.GetTagByName (tag_name);
 				if (t != null)
 					taglist.Add(t);
@@ -369,7 +375,7 @@ namespace PhomoExtension {
 			string line = outputStream.ReadLine();
 			while(line != null) {
 				if (line.EndsWith("%")) {
-					double progress = Convert.ToDouble(line.Replace("%", "").Replace(".", ","));
+					double progress = Convert.ToDouble(double.Parse(line.Replace("%", ""), CultureInfo.InvariantCulture));
 					progress_dialog.Fraction = 0.5 + progress_slice_start + progress_slice*progress/100;
 				}
 				line = outputStream.ReadLine();
